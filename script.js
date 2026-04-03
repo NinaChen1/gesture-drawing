@@ -58,13 +58,13 @@ let smoothPositions = [];
 const SMOOTH_COUNT = 3;
 
 // 分别设置偏移补偿
-let PINCH_OFFSET = 500;
-let DRAW_OFFSET = 0;
+let PINCH_OFFSET = 250;
+let DRAW_OFFSET = 250;
 
-// 烟花相关
+// 烟花相关 - 降低冷却时间
 let activeFireworks = [];
 let lastFireworkTime = 0;
-const FIREWORK_COOLDOWN = 800;
+const FIREWORK_COOLDOWN = 400; // 降到 400ms
 
 // MediaPipe
 let hands = null;
@@ -177,9 +177,10 @@ function createFirework(x, y) {
     activeFireworks.push(new RealisticFirework(x, y));
 }
 
+// 增加烟花数量
 function createMultiFirework() {
     const rect = getContainerRect();
-    const count = 4 + Math.floor(Math.random() * 4);
+    const count = 8 + Math.floor(Math.random() * 8); // 8-15个烟花
     for (let i = 0; i < count; i++) {
         const x = Math.random() * rect.width;
         const y = Math.random() * rect.height * 0.6 + 30;
@@ -369,7 +370,7 @@ function isOpenPalm(landmarks) {
            pinkyTip.y < pinkyBase.y;
 }
 
-// 判断食指和大拇指是否同时伸直（比"八"的手势）
+// 判断食指和大拇指是否同时伸直（比"八"的手势）- 提高灵敏度
 function isIndexAndThumbStraight(landmarks) {
     const thumbTip = landmarks[4];
     const thumbBase = landmarks[2];
@@ -378,9 +379,10 @@ function isIndexAndThumbStraight(landmarks) {
     const middleTip = landmarks[12];
     const middleBase = landmarks[9];
     
-    const thumbStraight = thumbTip.x < thumbBase.x - 0.03;
-    const indexStraight = indexTip.y < indexBase.y - 0.03;
-    const middleBent = middleTip.y > middleBase.y;
+    // 降低阈值，让检测更灵敏
+    const thumbStraight = thumbTip.x < thumbBase.x - 0.01;  // 从 0.03 降到 0.01
+    const indexStraight = indexTip.y < indexBase.y - 0.01; // 从 0.03 降到 0.01
+    const middleBent = middleTip.y > middleBase.y - 0.02;  // 放宽条件
     
     return thumbStraight && indexStraight && middleBent;
 }
@@ -576,7 +578,6 @@ function onResults(results) {
                 currentOpenPalmPos = palmPos;
             }
             
-            // 只有在不是"八"手势时，才检测食指画线
             if (isIndexOnly && isFullBright && !isStraight) {
                 indexFingerDetected = true;
                 currentIndexFingerPos = getFingertipPosition(landmarks);
@@ -591,7 +592,7 @@ function onResults(results) {
         currentBothOpen = leftOpenActive && rightOpenActive;
     }
     
-    // 烟花触发（只有一只手比"八"时才放烟花，且排除双手捏合状态）
+    // 烟花触发（降低冷却时间，更灵敏）
     const now = Date.now();
     if (thumbAndIndexStraight && !currentBothPinch && now - lastFireworkTime > FIREWORK_COOLDOWN) {
         lastFireworkTime = now;
