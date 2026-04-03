@@ -1,0 +1,95 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    overflow: hidden;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #000;
+}
+
+.app {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.video-container {
+    position: relative;
+    width: min(90vw, 90vh * 16 / 9);
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 0 30px rgba(0,0,0,0.5);
+}
+
+#webcam {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+}
+
+#output-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    transform: scaleX(-1);
+}
+
+/* 毛玻璃遮罩层 */
+.glass-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    z-index: 10;
+    pointer-events: none;
+    border-radius: 20px;
+}
+
+/* 光明区域矩形框 - 修复定位 */
+.light-rect {
+    position: absolute;
+    z-index: 11;
+    pointer-events: none;
+    border: 3px solid rgba(255, 255, 255, 0.9);
+    border-radius: 12px;
+    background: transparent;
+    /* 使用 inset box-shadow 实现挖空效果 */
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(0px);
+    display: none;
+}
+
+.info {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    z-index: 30;
+    backdrop-filter: blur(4px);
+    pointer-events: none;
+}
+
+.info p {
+    margin: 4px 0;
+}
