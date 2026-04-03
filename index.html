@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <title>Untitled</title>
+    <link rel="stylesheet" href="./style.css">
+
+  </head>
+    
+  <body>
+  <div class="app">
+    <!-- 毛玻璃遮罩层（默认覆盖全屏） -->
+    <div class="glass-overlay" id="glassOverlay"></div>
+    
+    <!-- 光明区域矩形框 -->
+    <div class="light-rect" id="lightRect"></div>
+    
+    <!-- 摄像头容器 -->
+    <div class="video-container">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="output-canvas"></canvas>
+    </div>
+    
+    <div class="info">
+        <p>🤏 双手同时用食指+大拇指捏合 → 框出光明区域</p>
+        <p>👆 松开捏合 → 恢复灰暗</p>
+    </div>
+</div>
+
+<!-- MediaPipe 库 -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script  src="./script.js"></script>
+
+  </body>
+  
+</html>
