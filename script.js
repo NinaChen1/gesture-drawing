@@ -59,12 +59,12 @@ const SMOOTH_COUNT = 3;
 
 // 分别设置偏移补偿
 let PINCH_OFFSET = 250;
-let DRAW_OFFSET = 0;
+let DRAW_OFFSET = 250;
 
-// 烟花相关 - 降低冷却时间
+// 烟花相关
 let activeFireworks = [];
 let lastFireworkTime = 0;
-const FIREWORK_COOLDOWN = 400; // 降到 400ms
+const FIREWORK_COOLDOWN = 400;
 
 // MediaPipe
 let hands = null;
@@ -177,10 +177,9 @@ function createFirework(x, y) {
     activeFireworks.push(new RealisticFirework(x, y));
 }
 
-// 增加烟花数量
 function createMultiFirework() {
     const rect = getContainerRect();
-    const count = 8 + Math.floor(Math.random() * 8); // 8-15个烟花
+    const count = 8 + Math.floor(Math.random() * 8);
     for (let i = 0; i < count; i++) {
         const x = Math.random() * rect.width;
         const y = Math.random() * rect.height * 0.6 + 30;
@@ -370,7 +369,7 @@ function isOpenPalm(landmarks) {
            pinkyTip.y < pinkyBase.y;
 }
 
-// 判断食指和大拇指是否同时伸直（比"八"的手势）- 提高灵敏度
+// 判断食指和大拇指是否同时伸直（比"八"的手势）
 function isIndexAndThumbStraight(landmarks) {
     const thumbTip = landmarks[4];
     const thumbBase = landmarks[2];
@@ -379,12 +378,34 @@ function isIndexAndThumbStraight(landmarks) {
     const middleTip = landmarks[12];
     const middleBase = landmarks[9];
     
-    // 降低阈值，让检测更灵敏
-    const thumbStraight = thumbTip.x < thumbBase.x - 0.01;  // 从 0.03 降到 0.01
-    const indexStraight = indexTip.y < indexBase.y - 0.01; // 从 0.03 降到 0.01
-    const middleBent = middleTip.y > middleBase.y - 0.02;  // 放宽条件
+    const thumbStraight = thumbTip.x < thumbBase.x - 0.01;
+    const indexStraight = indexTip.y < indexBase.y - 0.01;
+    const middleBent = middleTip.y > middleBase.y - 0.02;
     
     return thumbStraight && indexStraight && middleBent;
+}
+
+// 新增：判断是否握拳（所有手指都弯曲）
+function isFist(landmarks) {
+    const indexTip = landmarks[8];
+    const indexBase = landmarks[5];
+    const middleTip = landmarks[12];
+    const middleBase = landmarks[9];
+    const ringTip = landmarks[16];
+    const ringBase = landmarks[13];
+    const pinkyTip = landmarks[20];
+    const pinkyBase = landmarks[17];
+    const thumbTip = landmarks[4];
+    const thumbBase = landmarks[2];
+    
+    // 所有手指都弯曲
+    const indexBent = indexTip.y > indexBase.y;
+    const middleBent = middleTip.y > middleBase.y;
+    const ringBent = ringTip.y > ringBase.y;
+    const pinkyBent = pinkyTip.y > pinkyBase.y;
+    const thumbBent = thumbTip.x > thumbBase.x;
+    
+    return indexBent && middleBent && ringBent && pinkyBent && thumbBent;
 }
 
 function getFingertipPosition(landmarks) {
@@ -546,6 +567,7 @@ function onResults(results) {
     let currentOpenPalmPos = null;
     let indexFingerDetected = false;
     let thumbAndIndexStraight = false;
+    let fistDetected = false;  // 新增：握拳检测
     
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         for (let i = 0; i < results.multiHandLandmarks.length; i++) {
@@ -556,6 +578,7 @@ function onResults(results) {
             const isOpenNow = isOpenPalm(landmarks);
             const isIndexOnly = isOnlyIndexFinger(landmarks);
             const isStraight = isIndexAndThumbStraight(landmarks);
+            const isFistNow = isFist(landmarks);  // 新增：握拳检测
             
             if (isPinchingNow) {
                 const pinchPoint = getPinchPoint(landmarks);
@@ -586,13 +609,22 @@ function onResults(results) {
             if (isStraight) {
                 thumbAndIndexStraight = true;
             }
+            
+            if (isFistNow) {
+                fistDetected = true;
+            }
         }
         
         currentBothPinch = leftPinchActive && rightPinchActive;
         currentBothOpen = leftOpenActive && rightOpenActive;
     }
     
-    // 烟花触发（降低冷却时间，更灵敏）
+    // 握拳清空画板
+    if (fistDetected) {
+        clearDrawing();
+    }
+    
+    // 烟花触发
     const now = Date.now();
     if (thumbAndIndexStraight && !currentBothPinch && now - lastFireworkTime > FIREWORK_COOLDOWN) {
         lastFireworkTime = now;
