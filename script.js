@@ -58,8 +58,8 @@ let smoothPositions = [];
 const SMOOTH_COUNT = 3;
 
 // 分别设置偏移补偿
-let PINCH_OFFSET = 250;
-let DRAW_OFFSET = 250;
+let PINCH_OFFSET = 500;
+let DRAW_OFFSET = 0;
 
 // 烟花相关
 let activeFireworks = [];
