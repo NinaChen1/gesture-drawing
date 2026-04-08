@@ -10,14 +10,14 @@
     
   <body>
   <div class="app">
-    <!-- 毛玻璃遮罩层（默认覆盖全屏） -->
-    <div class="glass-overlay" id="glassOverlay"></div>
-    
-    <!-- 光明区域矩形框 -->
-    <div class="light-rect" id="lightRect"></div>
-    
     <!-- 摄像头容器 -->
     <div class="video-container">
+        <!-- 毛玻璃遮罩层（覆盖摄像头区域） -->
+        <div class="glass-overlay" id="glassOverlay"></div>
+        
+        <!-- 光明区域矩形框 -->
+        <div class="light-rect" id="lightRect"></div>
+
         <video id="webcam" autoplay playsinline muted></video>
         <canvas id="output-canvas"></canvas>
     </div>
