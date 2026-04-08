@@ -58,7 +58,7 @@ let smoothPositions = [];
 const SMOOTH_COUNT = 3;
 
 // 分别设置偏移补偿
-let PINCH_OFFSET = 500;
+let PINCH_OFFSET = 0;
 let DRAW_OFFSET = 0;
 
 // 烟花相关
@@ -73,9 +73,77 @@ let camera = null;
 let videoWidth = 640;
 let videoHeight = 480;
 
+const videoContainer = document.querySelector('.video-container');
+let containerRectCache = { width: 640, height: 480 };
+let pinchTransform = { displayWidth: 640, displayHeight: 480, offsetX: 0, offsetY: 0 };
+let drawTransform = { displayWidth: 640, displayHeight: 480, offsetX: 0, offsetY: 0 };
+let lastLightRectSignature = '';
+let lastOverlayDisplay = '';
+let lastRectDisplay = '';
+let leftPinchStable = false;
+let rightPinchStable = false;
+let leftSmoothedPinchPoint = null;
+let rightSmoothedPinchPoint = null;
+let smoothedLightRect = null;
+
+const PINCH_ENTER_DISTANCE = 0.045;
+const PINCH_EXIT_DISTANCE = 0.065;
+const PINCH_POINT_SMOOTHING = 0.35;
+const RECT_SMOOTHING = 0.28;
+
 function getContainerRect() {
-    const container = document.querySelector('.video-container');
-    return container.getBoundingClientRect();
+    return containerRectCache;
+}
+
+function computeTransform(canvasWidth, canvasHeight) {
+    const videoAspect = videoWidth / videoHeight;
+    const containerAspect = canvasWidth / canvasHeight;
+
+    let displayWidth, displayHeight, offsetX, offsetY;
+
+    if (videoAspect > containerAspect) {
+        displayHeight = canvasHeight;
+        displayWidth = displayHeight * videoAspect;
+        offsetX = (canvasWidth - displayWidth) / 2;
+        offsetY = 0;
+    } else {
+        displayWidth = canvasWidth;
+        displayHeight = displayWidth / videoAspect;
+        offsetX = 0;
+        offsetY = (canvasHeight - displayHeight) / 2;
+    }
+
+    return { displayWidth, displayHeight, offsetX, offsetY };
+}
+
+function refreshLayoutMetrics() {
+    const rect = videoContainer.getBoundingClientRect();
+    containerRectCache = { width: rect.width, height: rect.height };
+    pinchTransform = computeTransform(rect.width, rect.height);
+    drawTransform = computeTransform(rect.width, rect.height);
+}
+
+function setOverlayDisplay(displayValue) {
+    if (lastOverlayDisplay !== displayValue) {
+        glassOverlay.style.display = displayValue;
+        lastOverlayDisplay = displayValue;
+    }
+}
+
+function setLightRectDisplay(displayValue) {
+    if (lastRectDisplay !== displayValue) {
+        lightRect.style.display = displayValue;
+        lastRectDisplay = displayValue;
+    }
+}
+
+function smoothPoint(prev, next, alpha) {
+    if (!next) return prev;
+    if (!prev) return { x: next.x, y: next.y };
+    return {
+        x: prev.x + (next.x - prev.x) * alpha,
+        y: prev.y + (next.y - prev.y) * alpha
+    };
 }
 
 // ============ 现实风格烟花系统 ============
@@ -204,58 +272,16 @@ function updateFireworks() {
 // ============ 坐标转换 ============
 
 function mediapipeToPinchCoords(x, y) {
-    const rect = getContainerRect();
-    const canvasWidth = rect.width;
-    const canvasHeight = rect.height;
-    
-    const videoAspect = videoWidth / videoHeight;
-    const containerAspect = canvasWidth / canvasHeight;
-    
-    let displayWidth, displayHeight, offsetX, offsetY;
-    
-    if (videoAspect > containerAspect) {
-        displayHeight = canvasHeight;
-        displayWidth = displayHeight * videoAspect;
-        offsetX = (canvasWidth - displayWidth) / 2;
-        offsetY = 0;
-    } else {
-        displayWidth = canvasWidth;
-        displayHeight = displayWidth / videoAspect;
-        offsetX = 0;
-        offsetY = (canvasHeight - displayHeight) / 2;
-    }
-    
-    let mappedX = (1 - x) * displayWidth + offsetX + PINCH_OFFSET;
-    let mappedY = y * displayHeight + offsetY;
-    
+    const mappedX = (1 - x) * pinchTransform.displayWidth + pinchTransform.offsetX + PINCH_OFFSET;
+    const mappedY = y * pinchTransform.displayHeight + pinchTransform.offsetY;
+
     return { x: mappedX, y: mappedY };
 }
 
 function mediapipeToDrawCoords(x, y) {
-    const rect = getContainerRect();
-    const canvasWidth = rect.width;
-    const canvasHeight = rect.height;
-    
-    const videoAspect = videoWidth / videoHeight;
-    const containerAspect = canvasWidth / canvasHeight;
-    
-    let displayWidth, displayHeight, offsetX, offsetY;
-    
-    if (videoAspect > containerAspect) {
-        displayHeight = canvasHeight;
-        displayWidth = displayHeight * videoAspect;
-        offsetX = (canvasWidth - displayWidth) / 2;
-        offsetY = 0;
-    } else {
-        displayWidth = canvasWidth;
-        displayHeight = displayWidth / videoAspect;
-        offsetX = 0;
-        offsetY = (canvasHeight - displayHeight) / 2;
-    }
-    
-    let mappedX = (1 - x) * displayWidth + offsetX + DRAW_OFFSET;
-    let mappedY = y * displayHeight + offsetY;
-    
+    const mappedX = (1 - x) * drawTransform.displayWidth + drawTransform.offsetX + DRAW_OFFSET;
+    const mappedY = y * drawTransform.displayHeight + drawTransform.offsetY;
+
     return { x: mappedX, y: mappedY };
 }
 
@@ -326,13 +352,13 @@ function drawFastMovement(fromX, fromY, toX, toY, speed) {
 }
 
 // ============ 手势判断 ============
-function isPinching(landmarks) {
+function isPinching(landmarks, wasPinching = false) {
     const thumbTip = landmarks[4];
     const indexTip = landmarks[8];
     const dx = thumbTip.x - indexTip.x;
     const dy = thumbTip.y - indexTip.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    return distance < 0.05;
+    return wasPinching ? distance < PINCH_EXIT_DISTANCE : distance < PINCH_ENTER_DISTANCE;
 }
 
 function isOnlyIndexFinger(landmarks) {
@@ -369,20 +395,23 @@ function isOpenPalm(landmarks) {
            pinkyTip.y < pinkyBase.y;
 }
 
-// 判断食指和大拇指是否同时伸直（比"八"的手势）
-function isIndexAndThumbStraight(landmarks) {
-    const thumbTip = landmarks[4];
-    const thumbBase = landmarks[2];
+// 判断是否为 "yeah" 手势（食指+中指伸直，其余手指收起）
+function isYeahGesture(landmarks) {
     const indexTip = landmarks[8];
     const indexBase = landmarks[5];
     const middleTip = landmarks[12];
     const middleBase = landmarks[9];
-    
-    const thumbStraight = thumbTip.x < thumbBase.x - 0.01;
-    const indexStraight = indexTip.y < indexBase.y - 0.01;
-    const middleBent = middleTip.y > middleBase.y - 0.02;
-    
-    return thumbStraight && indexStraight && middleBent;
+    const ringTip = landmarks[16];
+    const ringBase = landmarks[13];
+    const pinkyTip = landmarks[20];
+    const pinkyBase = landmarks[17];
+
+    const indexStraight = indexTip.y < indexBase.y - 0.015;
+    const middleStraight = middleTip.y < middleBase.y - 0.015;
+    const ringBent = ringTip.y > ringBase.y - 0.005;
+    const pinkyBent = pinkyTip.y > pinkyBase.y - 0.005;
+
+    return indexStraight && middleStraight && ringBent && pinkyBent;
 }
 
 // 新增：判断是否握拳（所有手指都弯曲）
@@ -470,8 +499,8 @@ function setFullBright() {
     if (!isFullBright) {
         isFullBright = true;
         isInPinchMode = false;
-        glassOverlay.style.display = 'none';
-        lightRect.style.display = 'none';
+        setOverlayDisplay('none');
+        setLightRectDisplay('none');
     }
 }
 
@@ -480,36 +509,56 @@ function enterPinchMode() {
         isFullBright = false;
     }
     isInPinchMode = true;
-    glassOverlay.style.display = 'block';
-    lightRect.style.display = 'none';
+    setOverlayDisplay('block');
+    setLightRectDisplay('none');
 }
 
 function updateLightRect() {
     if (isFullBright) return;
     
     if (isInPinchMode && leftPinchActive && rightPinchActive && leftPinchPoint && rightPinchPoint) {
-        const x1 = Math.min(leftPinchPoint.x, rightPinchPoint.x);
-        const y1 = Math.min(leftPinchPoint.y, rightPinchPoint.y);
-        const x2 = Math.max(leftPinchPoint.x, rightPinchPoint.x);
-        const y2 = Math.max(leftPinchPoint.y, rightPinchPoint.y);
+        const targetX1 = Math.min(leftPinchPoint.x, rightPinchPoint.x);
+        const targetY1 = Math.min(leftPinchPoint.y, rightPinchPoint.y);
+        const targetX2 = Math.max(leftPinchPoint.x, rightPinchPoint.x);
+        const targetY2 = Math.max(leftPinchPoint.y, rightPinchPoint.y);
+
+        if (!smoothedLightRect) {
+            smoothedLightRect = { x1: targetX1, y1: targetY1, x2: targetX2, y2: targetY2 };
+        } else {
+            smoothedLightRect.x1 += (targetX1 - smoothedLightRect.x1) * RECT_SMOOTHING;
+            smoothedLightRect.y1 += (targetY1 - smoothedLightRect.y1) * RECT_SMOOTHING;
+            smoothedLightRect.x2 += (targetX2 - smoothedLightRect.x2) * RECT_SMOOTHING;
+            smoothedLightRect.y2 += (targetY2 - smoothedLightRect.y2) * RECT_SMOOTHING;
+        }
+
+        const x1 = smoothedLightRect.x1;
+        const y1 = smoothedLightRect.y1;
+        const x2 = smoothedLightRect.x2;
+        const y2 = smoothedLightRect.y2;
         
         const width = x2 - x1;
         const height = y2 - y1;
         
         if (width > 10 && height > 10) {
-            lightRect.style.display = 'block';
-            lightRect.style.left = x1 + 'px';
-            lightRect.style.top = y1 + 'px';
-            lightRect.style.width = width + 'px';
-            lightRect.style.height = height + 'px';
-            glassOverlay.style.display = 'none';
+            const signature = `${Math.round(x1)},${Math.round(y1)},${Math.round(width)},${Math.round(height)}`;
+            setLightRectDisplay('block');
+            if (signature !== lastLightRectSignature) {
+                lightRect.style.left = x1 + 'px';
+                lightRect.style.top = y1 + 'px';
+                lightRect.style.width = width + 'px';
+                lightRect.style.height = height + 'px';
+                lastLightRectSignature = signature;
+            }
+            setOverlayDisplay('none');
             return;
         }
     }
     
-    lightRect.style.display = 'none';
+    setLightRectDisplay('none');
+    lastLightRectSignature = '';
+    smoothedLightRect = null;
     if (!isFullBright) {
-        glassOverlay.style.display = 'block';
+        setOverlayDisplay('block');
     }
 }
 
@@ -546,8 +595,12 @@ function onResults(results) {
     if (!canvasCtx) return;
     
     if (videoElement.videoWidth) {
+        const hasVideoSizeChanged = videoWidth !== videoElement.videoWidth || videoHeight !== videoElement.videoHeight;
         videoWidth = videoElement.videoWidth;
         videoHeight = videoElement.videoHeight;
+        if (hasVideoSizeChanged) {
+            refreshLayoutMetrics();
+        }
     }
     
     canvasCtx.save();
@@ -566,7 +619,7 @@ function onResults(results) {
     let currentIndexFingerPos = null;
     let currentOpenPalmPos = null;
     let indexFingerDetected = false;
-    let thumbAndIndexStraight = false;
+    let yeahDetected = false;
     let fistDetected = false;  // 新增：握拳检测
     
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
@@ -574,21 +627,32 @@ function onResults(results) {
             const landmarks = results.multiHandLandmarks[i];
             const handedness = results.multiHandedness[i].label;
             
-            const isPinchingNow = isPinching(landmarks);
+            const wasPinching = handedness === 'Left' ? leftPinchStable : rightPinchStable;
+            const isPinchingNow = isPinching(landmarks, wasPinching);
             const isOpenNow = isOpenPalm(landmarks);
             const isIndexOnly = isOnlyIndexFinger(landmarks);
-            const isStraight = isIndexAndThumbStraight(landmarks);
+            const isYeahNow = isYeahGesture(landmarks);
             const isFistNow = isFist(landmarks);  // 新增：握拳检测
             
             if (isPinchingNow) {
-                const pinchPoint = getPinchPoint(landmarks);
+                const rawPinchPoint = getPinchPoint(landmarks);
                 if (handedness === 'Left') {
+                    leftPinchStable = true;
                     leftPinchActive = true;
-                    leftPinchPoint = pinchPoint;
+                    leftSmoothedPinchPoint = smoothPoint(leftSmoothedPinchPoint, rawPinchPoint, PINCH_POINT_SMOOTHING);
+                    leftPinchPoint = leftSmoothedPinchPoint;
                 } else {
+                    rightPinchStable = true;
                     rightPinchActive = true;
-                    rightPinchPoint = pinchPoint;
+                    rightSmoothedPinchPoint = smoothPoint(rightSmoothedPinchPoint, rawPinchPoint, PINCH_POINT_SMOOTHING);
+                    rightPinchPoint = rightSmoothedPinchPoint;
                 }
+            } else if (handedness === 'Left') {
+                leftPinchStable = false;
+                leftSmoothedPinchPoint = null;
+            } else {
+                rightPinchStable = false;
+                rightSmoothedPinchPoint = null;
             }
             
             if (isOpenNow) {
@@ -601,13 +665,13 @@ function onResults(results) {
                 currentOpenPalmPos = palmPos;
             }
             
-            if (isIndexOnly && isFullBright && !isStraight) {
+            if (isIndexOnly && isFullBright && !isYeahNow) {
                 indexFingerDetected = true;
                 currentIndexFingerPos = getFingertipPosition(landmarks);
             }
             
-            if (isStraight) {
-                thumbAndIndexStraight = true;
+            if (isYeahNow) {
+                yeahDetected = true;
             }
             
             if (isFistNow) {
@@ -617,6 +681,11 @@ function onResults(results) {
         
         currentBothPinch = leftPinchActive && rightPinchActive;
         currentBothOpen = leftOpenActive && rightOpenActive;
+    } else {
+        leftPinchStable = false;
+        rightPinchStable = false;
+        leftSmoothedPinchPoint = null;
+        rightSmoothedPinchPoint = null;
     }
     
     // 握拳清空画板
@@ -626,7 +695,7 @@ function onResults(results) {
     
     // 烟花触发
     const now = Date.now();
-    if (thumbAndIndexStraight && !currentBothPinch && now - lastFireworkTime > FIREWORK_COOLDOWN) {
+    if (yeahDetected && !currentBothPinch && now - lastFireworkTime > FIREWORK_COOLDOWN) {
         lastFireworkTime = now;
         createMultiFirework();
     }
@@ -641,13 +710,13 @@ function onResults(results) {
     } else if (!isFullBright && isInPinchMode && currentBothOpen) {
         setFullBright();
     } else if (isInPinchMode && !isFullBright && !currentBothPinch) {
-        glassOverlay.style.display = 'block';
-        lightRect.style.display = 'none';
+        setOverlayDisplay('block');
+        setLightRectDisplay('none');
     }
     
     // 全亮模式下的线条绘制
     if (isFullBright) {
-        if (indexFingerDetected && currentIndexFingerPos && !thumbAndIndexStraight) {
+        if (indexFingerDetected && currentIndexFingerPos && !yeahDetected) {
             const smoothed = smoothCoordinate(currentIndexFingerPos.x, currentIndexFingerPos.y);
             
             if (lastX !== 0 && lastY !== 0) {
@@ -692,6 +761,7 @@ function onResults(results) {
 }
 
 function resizeAllCanvases() {
+    refreshLayoutMetrics();
     const rect = getContainerRect();
     
     canvasElement.width = rect.width;
@@ -736,6 +806,7 @@ window.addEventListener('resize', () => {
 });
 
 function init() {
+    refreshLayoutMetrics();
     resizeAllCanvases();
     initDrawingCanvas();
     initFireworkCanvas();
@@ -744,8 +815,8 @@ function init() {
     
     isFullBright = false;
     isInPinchMode = false;
-    glassOverlay.style.display = 'block';
-    lightRect.style.display = 'none';
+    setOverlayDisplay('block');
+    setLightRectDisplay('none');
 }
 
 window.addEventListener('load', init);
